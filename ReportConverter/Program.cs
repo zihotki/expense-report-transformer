@@ -6,6 +6,8 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using CsvHelper;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace ReportConverter
 {
@@ -20,7 +22,7 @@ namespace ReportConverter
 
 			List<TransactionDetail> entries;
 
-			using (var reader = File.OpenText("c:\\transaction log.txt"))
+			using (var reader = File.OpenText("c:\\Users\\cube\\Desktop\\transaction.json"))
 			{
 				entries = ReadAllTransactionEntries(reader);
 			}
@@ -29,7 +31,7 @@ namespace ReportConverter
 
 			entries.Reverse();
 
-			using (var writer = File.CreateText("c:\\transaction log.csv"))
+			using (var writer = File.CreateText("c:\\Users\\cube\\Desktop\\transaction log old.txt"))
 			{
 				var csv = new CsvWriter(writer);
 				csv.Configuration.AutoMap<TransactionDetail>();
@@ -41,15 +43,15 @@ namespace ReportConverter
 
 		private static void AnalyzeTransactionTypes(List<TransactionDetail> entries)
 		{
-			foreach (var transactionDetail in entries)
+			foreach (var transaction in entries)
 			{
-				var title = transactionDetail.Title;
+				var title = transaction.Title;
 
 				if (title.StartsWith("albert ", StringComparison.InvariantCultureIgnoreCase)
 				    || title.StartsWith("ah", StringComparison.InvariantCultureIgnoreCase)
 					|| title.StartsWith("jumbo", StringComparison.InvariantCultureIgnoreCase))
 				{
-					transactionDetail.Type = "Food";
+					transaction.Type = "Food";
 					continue;
 				}
 
@@ -62,7 +64,7 @@ namespace ReportConverter
 					|| title.StartsWith("Naam: STG ", StringComparison.InvariantCultureIgnoreCase)
 					|| title.StartsWith("Naam: Stichting Derdengelden Buckaroo", StringComparison.InvariantCultureIgnoreCase))
 				{
-					transactionDetail.Type = "Utilities";
+					transaction.Type = "Utilities";
 					continue;
 				}
 
@@ -70,7 +72,7 @@ namespace ReportConverter
 					|| title.StartsWith("Ns-", StringComparison.InvariantCultureIgnoreCase)
 					|| title.StartsWith("Naam: TLS BV", StringComparison.InvariantCultureIgnoreCase))
 				{
-					transactionDetail.Type = "Transport";
+					transaction.Type = "Transport";
 					continue;
 				}
 
@@ -79,43 +81,35 @@ namespace ReportConverter
 					|| title.StartsWith("hema", StringComparison.InvariantCultureIgnoreCase)
 					|| title.StartsWith("xenos", StringComparison.InvariantCultureIgnoreCase))
 				{
-					transactionDetail.Type = "Groceries";
+					transaction.Type = "Groceries";
 					continue;
 				}
 			}
 		}
 
-		private static List<TransactionDetail> ReadAllTransactionEntries(StreamReader reader)
-		{
-			var result = new List<TransactionDetail>();
+        private static List<TransactionDetail> ReadAllTransactionEntries(StreamReader reader)
+        {
+            var result = new List<TransactionDetail>();
 
-			var hasData = true;
-			while (hasData)
-			{
-				var transactionDetailStrings = new List<string>();
-				string line;
-				do
-				{
-					line = reader.ReadLine();
+            JObject allDetails = (JObject)JToken.ReadFrom(new JsonTextReader(reader));
+            IList<JToken> transactions = allDetails["transactions"].Children().ToList();
 
-					if (line == null)
-					{
-						hasData = false;
-						break;
-					}
+            foreach (JToken r in transactions)
+            {
+                Transaction transactionResult = r.ToObject<Transaction>();
+                var transactionDetail = new TransactionDetail()
+                {
+                    Date = DateTime.ParseExact(transactionResult.Date, "dd-MM-yyyy", DateTimeFormatInfo.CurrentInfo),
+                    Amount = Math.Abs(Decimal.Parse(transactionResult.Amount)),
+                    Direction = Decimal.Parse(transactionResult.Amount) > 0 ? Direction.In : Direction.Out,                   
+                    Title = transactionResult.StatementLines[0],
+                    Type = ""
+                };
+                result.Add(transactionDetail);
+            }
 
-					transactionDetailStrings.Add(line);
-				} while (IsNotLastTransactionLine(line));
-
-				if (transactionDetailStrings.Count > 0)
-				{
-					var transactionDetail = ParseTransaction(transactionDetailStrings);
-					result.Add(transactionDetail);
-				}
-			}
-
-			return result;
-		}
+            return result;
+        }
 
 		private static TransactionDetail ParseTransaction(List<string> transactionDetailStrings)
 		{
